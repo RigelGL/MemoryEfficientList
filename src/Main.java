@@ -64,8 +64,8 @@ public class Main {
         long minAr = Long.MAX_VALUE;
         long totalMel = 0;
         long totalAr = 0;
-        int ignored = 5;
-        int count = 10;
+        int ignored = 2;
+        int count = 2;
 
         for(int h = 0; h < ignored + count; h++) {
             Random r = new Random(234345465556425653L);

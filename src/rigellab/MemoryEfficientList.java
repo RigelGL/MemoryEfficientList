@@ -1,7 +1,9 @@
 package rigellab;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.nio.Buffer;
 import java.nio.ByteBuffer;
 import java.util.*;
 
@@ -20,7 +22,7 @@ public class MemoryEfficientList implements List {
     private final Field[] fields;
     private final byte[] fieldTypes;
     private int size = 0;
-    private byte[] data = new byte[128];
+    private ByteBuffer data = ByteBuffer.allocate(128);
 
     private int objectByteSize;
     private boolean buildWithDefaultValues;
@@ -166,74 +168,47 @@ public class MemoryEfficientList implements List {
         for(int i = 0; i < fields.length; i++) {
             switch(fieldTypes[i]) {
                 case TYPE_BOOLEAN: {
-                    fields[i].setBoolean(object, data[offset] == 1);
+                    fields[i].setBoolean(object, data.get(offset) == 1);
                     offset += 1;
                     break;
                 }
                 case TYPE_BYTE: {
-                    fields[i].setByte(object, data[offset]);
+                    fields[i].setByte(object, data.get(offset));
                     offset += 1;
                     break;
                 }
                 case TYPE_SHORT: {
-                    short shortBytes = (short) ((data[offset] & 0xff) | ((data[offset + 1] & 0xFF) << 8));
-                    fields[i].setShort(object, shortBytes);
+                    fields[i].setShort(object, data.getShort(offset));
                     offset += 2;
                     break;
                 }
                 case TYPE_CHAR: {
-                    char charBytes = (char) ((data[offset] & 0xff) | ((data[offset + 1] & 0xFF) << 8));
-                    fields[i].setChar(object, charBytes);
+                    fields[i].setChar(object, data.getChar(offset));
                     offset += 2;
                     break;
                 }
                 case TYPE_INT: {
-                    int intBytes = (data[offset] & 0xff) |
-                            ((data[offset + 1] & 0xFF) << 8) |
-                            ((data[offset + 2] & 0xFF) << 16) |
-                            ((data[offset + 3] & 0xFF) << 24);
-                    fields[i].setInt(object, intBytes);
+                    fields[i].setInt(object, data.getInt(offset));
                     offset += 4;
                     break;
                 }
                 case TYPE_FLOAT: {
-                    int floatBytes = (data[offset] & 0xff) |
-                            ((data[offset + 1] & 0xFF) << 8) |
-                            ((data[offset + 2] & 0xFF) << 16) |
-                            ((data[offset + 3] & 0xFF) << 24);
-                    fields[i].setFloat(object, Float.intBitsToFloat(floatBytes));
+                    fields[i].setFloat(object, data.getFloat(offset));
                     offset += 4;
                     break;
                 }
                 case TYPE_LONG: {
-                    long longBytes = (data[offset] & 0xff) |
-                            ((data[offset + 1] & 0xFFL) << 8) |
-                            ((data[offset + 2] & 0xFFL) << 16) |
-                            ((data[offset + 3] & 0xFFL) << 24) |
-                            ((data[offset + 4] & 0xFFL) << 32) |
-                            ((data[offset + 5] & 0xFFL) << 40) |
-                            ((data[offset + 6] & 0xFFL) << 48) |
-                            ((data[offset + 7] & 0xFFL) << 56);
-                    fields[i].setLong(object, longBytes);
+                    fields[i].setLong(object, data.getLong(offset));
                     offset += 8;
                     break;
                 }
                 case TYPE_DOUBLE: {
-                    long doubleBytes = (data[offset] & 0xff) |
-                            ((data[offset + 1] & 0xFFL) << 8) |
-                            ((data[offset + 2] & 0xFFL) << 16) |
-                            ((data[offset + 3] & 0xFFL) << 24) |
-                            ((data[offset + 4] & 0xFFL) << 32) |
-                            ((data[offset + 5] & 0xFFL) << 40) |
-                            ((data[offset + 6] & 0xFFL) << 48) |
-                            ((data[offset + 7] & 0xFFL) << 56);
-                    fields[i].setDouble(object, doubleBytes);
+                    fields[i].setDouble(object, data.getDouble(offset));
                     offset += 8;
                     break;
                 }
             }
         }
-
     }
 
     private void decomposeObject(int pos, Object object) throws Exception {
@@ -244,77 +219,49 @@ public class MemoryEfficientList implements List {
 
             switch(fieldTypes[i]) {
                 case TYPE_BOOLEAN: {
-                    data[offset] = (byte) (f.getBoolean(object) ? 1 : 0);
+                    data.put(offset, (byte) (f.getBoolean(object) ? 1 : 0));
                     offset += 1;
                     break;
                 }
 
                 case TYPE_BYTE: {
-                    data[offset] = f.getByte(object);
+                    data.put(offset, f.getByte(object));
                     offset += 1;
                     break;
                 }
 
                 case TYPE_SHORT: {
-                    short shortValue = f.getShort(object);
-                    data[offset] = (byte) (shortValue & 0xFF);
-                    data[offset + 1] = (byte) ((shortValue >> 8) & 0xFF);
+                    data.putShort(offset, f.getShort(object));
                     offset += 2;
                     break;
                 }
 
                 case TYPE_CHAR: {
-                    char charValue = f.getChar(object);
-                    data[offset] = (byte) (charValue & 0xFF);
-                    data[offset + 1] = (byte) ((charValue >> 8) & 0xFF);
+                    data.putChar(offset, f.getChar(object));
                     offset += 2;
                     break;
                 }
 
                 case TYPE_INT: {
-                    int intValue = f.getInt(object);
-                    data[offset] = (byte) (intValue & 0xFF);
-                    data[offset + 1] = (byte) ((intValue >> 8) & 0xFF);
-                    data[offset + 2] = (byte) ((intValue >> 16) & 0xFF);
-                    data[offset + 3] = (byte) ((intValue >> 24) & 0xFF);
+                    data.putInt(offset, f.getInt(object));
                     offset += 4;
                     break;
                 }
 
                 case TYPE_FLOAT: {
-                    int floatValue = Float.floatToRawIntBits(f.getFloat(object));
-                    data[offset] = (byte) (floatValue & 0xFF);
-                    data[offset + 1] = (byte) ((floatValue >> 8) & 0xFF);
-                    data[offset + 2] = (byte) ((floatValue >> 16) & 0xFF);
-                    data[offset + 3] = (byte) ((floatValue >> 24) & 0xFF);
+                    data.putFloat(offset, f.getFloat(object));
                     offset += 4;
                     break;
                 }
 
                 case TYPE_LONG: {
-                    long longValue = f.getLong(object);
-                    data[offset] = (byte) (longValue & 0xFF);
-                    data[offset + 1] = (byte) ((longValue >> 8) & 0xFF);
-                    data[offset + 2] = (byte) ((longValue >> 16) & 0xFF);
-                    data[offset + 3] = (byte) ((longValue >> 24) & 0xFF);
-                    data[offset + 4] = (byte) ((longValue >> 32) & 0xFF);
-                    data[offset + 5] = (byte) ((longValue >> 40) & 0xFF);
-                    data[offset + 6] = (byte) ((longValue >> 48) & 0xFF);
-                    data[offset + 7] = (byte) ((longValue >> 56) & 0xFF);
+                    data.putLong(offset, f.getLong(object));
                     offset += 8;
                     break;
                 }
 
                 case TYPE_DOUBLE: {
-                    long doubleValue = Double.doubleToRawLongBits(f.getDouble(object));
-                    data[offset] = (byte) (doubleValue & 0xFF);
-                    data[offset + 1] = (byte) ((doubleValue >> 8) & 0xFF);
-                    data[offset + 2] = (byte) ((doubleValue >> 16) & 0xFF);
-                    data[offset + 3] = (byte) ((doubleValue >> 24) & 0xFF);
-                    data[offset + 4] = (byte) ((doubleValue >> 32) & 0xFF);
-                    data[offset + 5] = (byte) ((doubleValue >> 40) & 0xFF);
-                    data[offset + 6] = (byte) ((doubleValue >> 48) & 0xFF);
-                    data[offset + 7] = (byte) ((doubleValue >> 56) & 0xFF);
+                    data.putDouble(offset, f.getDouble(object));
                     offset += 8;
                     break;
                 }
@@ -377,10 +324,13 @@ public class MemoryEfficientList implements List {
 
     @Override
     public boolean add(Object o) {
-        if((size + 1) * objectByteSize >= data.length) {
-            byte[] newData = new byte[data.length * 3 / 2 + 1];
-            System.arraycopy(data, 0, newData, 0, size * objectByteSize);
-            data = newData;
+        if((size + 1) * objectByteSize >= data.capacity()) {
+            byte[] oldData = new byte[size * objectByteSize];
+            data.position(size * objectByteSize);
+            data.flip();
+            data.get(oldData, 0, oldData.length);
+            data = ByteBuffer.allocate(data.capacity() * 3 / 2 + 1);
+            data.put(oldData);
         }
 
         try {
