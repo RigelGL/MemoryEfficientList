@@ -1,8 +1,8 @@
 package rigellab;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.*;
+import sun.misc.Unsafe;
 
 public class MemoryEfficientList implements List {
 
@@ -16,34 +16,41 @@ public class MemoryEfficientList implements List {
     private static final byte TYPE_DOUBLE = 7;
 
 
-    private final Field[] fields;
+    private Class clazz;
     private final byte[] fieldTypes;
+    private final long[] fieldOffsets;
     private int size = 0;
     private byte[] data;
 
     private int objectByteSize;
-    private boolean buildWithDefaultValues;
-    private Constructor<?> defaultConstructor;
 
     private Object firstFast;
     private Object secondFast;
     private Object fastInternal;
     private Object oldValue;
 
+    private static final Unsafe unsafe;
+
+    static {
+        try {
+            Field theUnsafe = Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            unsafe = (Unsafe) theUnsafe.get(null);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
 
     public MemoryEfficientList(Class<?> clazz) {
+        this.clazz = clazz;
         List<Field> correctFields = getCorrectFields(clazz);
 
-        fields = new Field[correctFields.size()];
         fieldTypes = new byte[correctFields.size()];
+        fieldOffsets = new long[correctFields.size()];
 
         initFields(correctFields);
 
-        boolean c = initCorrectConstructor(clazz);
-
-        if(!c) {
-            throw new RuntimeException("You must add constructor without params to class " + clazz.getCanonicalName());
-        }
 
         data = new byte[objectByteSize * 16];
 
@@ -57,18 +64,13 @@ public class MemoryEfficientList implements List {
     }
 
     public MemoryEfficientList(Class<?> clazz, int size) {
+        this.clazz = clazz;
         List<Field> correctFields = getCorrectFields(clazz);
 
-        fields = new Field[correctFields.size()];
         fieldTypes = new byte[correctFields.size()];
+        fieldOffsets = new long[correctFields.size()];
 
         initFields(correctFields);
-
-        boolean c = initCorrectConstructor(clazz);
-
-        if(!c) {
-            throw new RuntimeException("You must add constructor without params to class " + clazz.getCanonicalName());
-        }
 
         data = new byte[objectByteSize * size];
 
@@ -82,6 +84,7 @@ public class MemoryEfficientList implements List {
     }
 
     private List<Field> getCorrectFields(Class<?> clazz) {
+
         List<Field> correctFields = new ArrayList<>();
         for(Field f : clazz.getDeclaredFields()) {
             // not static
@@ -92,9 +95,9 @@ public class MemoryEfficientList implements List {
     }
 
     private void initFields(List<Field> correctFields) {
-        for(int i = 0; i < fields.length; i++) {
+        for(int i = 0; i < fieldTypes.length; i++) {
             Field f = correctFields.get(i);
-            fields[i] = f;
+            fieldOffsets[i] = unsafe.objectFieldOffset(f);
             f.setAccessible(true);
             if(f.getType() == boolean.class) {
                 fieldTypes[i] = TYPE_BOOLEAN;
@@ -131,110 +134,36 @@ public class MemoryEfficientList implements List {
         }
     }
 
-    private boolean initCorrectConstructor(Class<?> clazz) {
-        for(Constructor<?> c : clazz.getDeclaredConstructors()) {
-            if(c.getParameterCount() == 0) {
-                defaultConstructor = c;
-                buildWithDefaultValues = false;
-                break;
-            }
-            else if(fields.length == c.getParameterCount()) {
-                boolean ok = true;
-                for(int i = 0; i < fields.length; i++) {
-                    if(fields[i].getType() != c.getParameterTypes()[i]) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if(ok) {
-                    defaultConstructor = c;
-                    buildWithDefaultValues = true;
-                }
-            }
-        }
-        if(defaultConstructor != null)
-            defaultConstructor.setAccessible(true);
-        return defaultConstructor != null;
-    }
-
-
-    private Object getDefaultValue(byte type) {
-        switch(type) {
-            case TYPE_BOOLEAN:
-                return false;
-            case TYPE_BYTE:
-                return (byte) 0;
-            case TYPE_SHORT:
-                return (short) 0;
-            case TYPE_CHAR:
-                return (char) 0;
-            case TYPE_INT:
-                return 0;
-            case TYPE_FLOAT:
-                return 0.0f;
-            case TYPE_LONG:
-                return 0L;
-            case TYPE_DOUBLE:
-                return 0.0;
-        }
-        return null;
-    }
 
     private Object buildNewObject() throws Exception {
-        if(buildWithDefaultValues) {
-            switch(fields.length) {
-                case 1:
-                    return defaultConstructor.newInstance(getDefaultValue(fieldTypes[0]));
-                case 2:
-                    return defaultConstructor.newInstance(
-                            getDefaultValue(fieldTypes[0]),
-                            getDefaultValue(fieldTypes[1])
-                    );
-                case 3:
-                    return defaultConstructor.newInstance(
-                            getDefaultValue(fieldTypes[0]),
-                            getDefaultValue(fieldTypes[1]),
-                            getDefaultValue(fieldTypes[2])
-                    );
-                case 4:
-                    return defaultConstructor.newInstance(
-                            getDefaultValue(fieldTypes[0]),
-                            getDefaultValue(fieldTypes[1]),
-                            getDefaultValue(fieldTypes[2]),
-                            getDefaultValue(fieldTypes[3])
-                    );
-                default:
-                    return defaultConstructor.newInstance();
-            }
-        }
-        else
-            return defaultConstructor.newInstance();
+        return unsafe.allocateInstance(clazz);
     }
 
-    private void composeObject(int pos, Object object) throws Exception {
+    private void composeObject(int pos, Object object) {
         int offset = pos * objectByteSize;
 
-        for(int i = 0; i < fields.length; i++) {
+        for(int i = 0; i < fieldTypes.length; i++) {
+            long fo = fieldOffsets[i];
             switch(fieldTypes[i]) {
                 case TYPE_BOOLEAN: {
-                    fields[i].setBoolean(object, data[offset] == 1);
+                    unsafe.putBoolean(object, fo, data[offset] == 1);
                     offset += 1;
                     break;
                 }
                 case TYPE_BYTE: {
-                    fields[i].setByte(object, data[offset]);
+                    unsafe.putByte(object, fo, data[offset]);
                     offset += 1;
                     break;
                 }
                 case TYPE_SHORT: {
                     short shortBytes = (short) ((data[offset] & 0xff) | ((data[offset + 1] & 0xFF) << 8));
-                    fields[i].setShort(object, shortBytes);
+                    unsafe.putShort(object, fo, shortBytes);
                     offset += 2;
                     break;
                 }
                 case TYPE_CHAR: {
                     char charBytes = (char) ((data[offset] & 0xff) | ((data[offset + 1] & 0xFF) << 8));
-                    fields[i].setChar(object, charBytes);
+                    unsafe.putChar(object, fo, charBytes);
                     offset += 2;
                     break;
                 }
@@ -243,7 +172,7 @@ public class MemoryEfficientList implements List {
                             ((data[offset + 1] & 0xFF) << 8) |
                             ((data[offset + 2] & 0xFF) << 16) |
                             ((data[offset + 3] & 0xFF) << 24);
-                    fields[i].setInt(object, intBytes);
+                    unsafe.putInt(object, fo, intBytes);
                     offset += 4;
                     break;
                 }
@@ -252,7 +181,7 @@ public class MemoryEfficientList implements List {
                             ((data[offset + 1] & 0xFF) << 8) |
                             ((data[offset + 2] & 0xFF) << 16) |
                             ((data[offset + 3] & 0xFF) << 24);
-                    fields[i].setFloat(object, Float.intBitsToFloat(floatBytes));
+                    unsafe.putFloat(object, fo, Float.intBitsToFloat(floatBytes));
                     offset += 4;
                     break;
                 }
@@ -265,7 +194,7 @@ public class MemoryEfficientList implements List {
                             ((data[offset + 5] & 0xFFL) << 40) |
                             ((data[offset + 6] & 0xFFL) << 48) |
                             ((data[offset + 7] & 0xFFL) << 56);
-                    fields[i].setLong(object, longBytes);
+                    unsafe.putLong(object, fo, longBytes);
                     offset += 8;
                     break;
                 }
@@ -278,7 +207,7 @@ public class MemoryEfficientList implements List {
                             ((data[offset + 5] & 0xFFL) << 40) |
                             ((data[offset + 6] & 0xFFL) << 48) |
                             ((data[offset + 7] & 0xFFL) << 56);
-                    fields[i].setDouble(object, Double.longBitsToDouble(doubleBytes));
+                    unsafe.putDouble(object, fo, Double.longBitsToDouble(doubleBytes));
                     offset += 8;
                     break;
                 }
@@ -287,27 +216,27 @@ public class MemoryEfficientList implements List {
 
     }
 
-    private void decomposeObject(int pos, Object object) throws Exception {
+    private void decomposeObject(int pos, Object object) {
         int offset = pos * objectByteSize;
 
-        for(int i = 0; i < fields.length; i++) {
-            Field f = fields[i];
+        for(int i = 0; i < fieldTypes.length; i++) {
+            long fo = fieldOffsets[i];
 
             switch(fieldTypes[i]) {
                 case TYPE_BOOLEAN: {
-                    data[offset] = (byte) (f.getBoolean(object) ? 1 : 0);
+                    data[offset] = (byte) (unsafe.getBoolean(object, fo) ? 1 : 0);
                     offset += 1;
                     break;
                 }
 
                 case TYPE_BYTE: {
-                    data[offset] = f.getByte(object);
+                    data[offset] = unsafe.getByte(object, fo);
                     offset += 1;
                     break;
                 }
 
                 case TYPE_SHORT: {
-                    short shortValue = f.getShort(object);
+                    short shortValue = unsafe.getShort(object, fo);
                     data[offset] = (byte) (shortValue & 0xFF);
                     data[offset + 1] = (byte) ((shortValue >> 8) & 0xFF);
                     offset += 2;
@@ -315,7 +244,7 @@ public class MemoryEfficientList implements List {
                 }
 
                 case TYPE_CHAR: {
-                    char charValue = f.getChar(object);
+                    char charValue = unsafe.getChar(object, fo);
                     data[offset] = (byte) (charValue & 0xFF);
                     data[offset + 1] = (byte) ((charValue >> 8) & 0xFF);
                     offset += 2;
@@ -323,7 +252,7 @@ public class MemoryEfficientList implements List {
                 }
 
                 case TYPE_INT: {
-                    int intValue = f.getInt(object);
+                    int intValue = unsafe.getInt(object, fo);
                     data[offset] = (byte) (intValue & 0xFF);
                     data[offset + 1] = (byte) ((intValue >> 8) & 0xFF);
                     data[offset + 2] = (byte) ((intValue >> 16) & 0xFF);
@@ -333,7 +262,7 @@ public class MemoryEfficientList implements List {
                 }
 
                 case TYPE_FLOAT: {
-                    int floatValue = Float.floatToRawIntBits(f.getFloat(object));
+                    int floatValue = Float.floatToRawIntBits(unsafe.getFloat(object, fo));
                     data[offset] = (byte) (floatValue & 0xFF);
                     data[offset + 1] = (byte) ((floatValue >> 8) & 0xFF);
                     data[offset + 2] = (byte) ((floatValue >> 16) & 0xFF);
@@ -343,7 +272,7 @@ public class MemoryEfficientList implements List {
                 }
 
                 case TYPE_LONG: {
-                    long longValue = f.getLong(object);
+                    long longValue = unsafe.getLong(object, fo);
                     data[offset] = (byte) (longValue & 0xFF);
                     data[offset + 1] = (byte) ((longValue >> 8) & 0xFF);
                     data[offset + 2] = (byte) ((longValue >> 16) & 0xFF);
@@ -357,7 +286,7 @@ public class MemoryEfficientList implements List {
                 }
 
                 case TYPE_DOUBLE: {
-                    long doubleValue = Double.doubleToRawLongBits(f.getDouble(object));
+                    long doubleValue = Double.doubleToRawLongBits(unsafe.getDouble(object, fo));
                     data[offset] = (byte) (doubleValue & 0xFF);
                     data[offset + 1] = (byte) ((doubleValue >> 8) & 0xFF);
                     data[offset + 2] = (byte) ((doubleValue >> 16) & 0xFF);

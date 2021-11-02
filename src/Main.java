@@ -351,8 +351,8 @@ public class Main {
     public static void main(String[] args) throws Exception {
 //        Thread.sleep(5_000);
 //        testPerformanceIntegerToArray(10_000_000);
-        testPerformanceIntegerRandomSwapping(10_000_000);
-//        testPerformancePrimes(10_000_000);
+//        testPerformanceIntegerRandomSwapping(10_000_000);
+        testPerformancePrimes(10_000_000);
 //        testPerformanceLargeObjectRandomSwapping(1_000_000);
 
 //        testPerformanceVec3RandomSwapping(10_000_000);
