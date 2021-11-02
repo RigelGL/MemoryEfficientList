@@ -20,7 +20,8 @@ public class MemoryEfficientList implements List {
     private final byte[] fieldTypes;
     private final long[] fieldOffsets;
     private int size = 0;
-    private byte[] data;
+    private int dataSize;
+    private long dataAddress;
 
     private int objectByteSize;
 
@@ -51,8 +52,8 @@ public class MemoryEfficientList implements List {
 
         initFields(correctFields);
 
-
-        data = new byte[objectByteSize * 16];
+        dataSize = 16;
+        dataAddress = unsafe.allocateMemory(objectByteSize * 16);
 
         try {
             firstFast = buildNewObject();
@@ -72,7 +73,8 @@ public class MemoryEfficientList implements List {
 
         initFields(correctFields);
 
-        data = new byte[objectByteSize * size];
+        dataSize = size;
+        dataAddress = unsafe.allocateMemory(objectByteSize * size);
 
         try {
             firstFast = buildNewObject();
@@ -140,80 +142,53 @@ public class MemoryEfficientList implements List {
     }
 
     private void composeObject(int pos, Object object) {
-        int offset = pos * objectByteSize;
+        long offset = pos * objectByteSize;
 
         for(int i = 0; i < fieldTypes.length; i++) {
             long fo = fieldOffsets[i];
             switch(fieldTypes[i]) {
                 case TYPE_BOOLEAN: {
-                    unsafe.putBoolean(object, fo, data[offset] == 1);
+                    unsafe.putBoolean(object, fo, unsafe.getByte(dataAddress + offset) == 1);
                     offset += 1;
                     break;
                 }
                 case TYPE_BYTE: {
-                    unsafe.putByte(object, fo, data[offset]);
+                    unsafe.putByte(object, fo, unsafe.getByte(dataAddress + offset));
                     offset += 1;
                     break;
                 }
                 case TYPE_SHORT: {
-                    short shortBytes = (short) ((data[offset] & 0xff) | ((data[offset + 1] & 0xFF) << 8));
-                    unsafe.putShort(object, fo, shortBytes);
+                    unsafe.putShort(object, fo, unsafe.getShort(dataAddress + offset));
                     offset += 2;
                     break;
                 }
                 case TYPE_CHAR: {
-                    char charBytes = (char) ((data[offset] & 0xff) | ((data[offset + 1] & 0xFF) << 8));
-                    unsafe.putChar(object, fo, charBytes);
+                    unsafe.putChar(object, fo, unsafe.getChar(dataAddress + offset));
                     offset += 2;
                     break;
                 }
                 case TYPE_INT: {
-                    int intBytes = (data[offset] & 0xff) |
-                            ((data[offset + 1] & 0xFF) << 8) |
-                            ((data[offset + 2] & 0xFF) << 16) |
-                            ((data[offset + 3] & 0xFF) << 24);
-                    unsafe.putInt(object, fo, intBytes);
+                    unsafe.putInt(object, fo, unsafe.getInt(dataAddress + offset));
                     offset += 4;
                     break;
                 }
                 case TYPE_FLOAT: {
-                    int floatBytes = (data[offset] & 0xff) |
-                            ((data[offset + 1] & 0xFF) << 8) |
-                            ((data[offset + 2] & 0xFF) << 16) |
-                            ((data[offset + 3] & 0xFF) << 24);
-                    unsafe.putFloat(object, fo, Float.intBitsToFloat(floatBytes));
+                    unsafe.putFloat(object, fo, unsafe.getFloat(dataAddress + offset));
                     offset += 4;
                     break;
                 }
                 case TYPE_LONG: {
-                    long longBytes = (data[offset] & 0xff) |
-                            ((data[offset + 1] & 0xFFL) << 8) |
-                            ((data[offset + 2] & 0xFFL) << 16) |
-                            ((data[offset + 3] & 0xFFL) << 24) |
-                            ((data[offset + 4] & 0xFFL) << 32) |
-                            ((data[offset + 5] & 0xFFL) << 40) |
-                            ((data[offset + 6] & 0xFFL) << 48) |
-                            ((data[offset + 7] & 0xFFL) << 56);
-                    unsafe.putLong(object, fo, longBytes);
+                    unsafe.putLong(object, fo, unsafe.getLong(dataAddress + offset));
                     offset += 8;
                     break;
                 }
                 case TYPE_DOUBLE: {
-                    long doubleBytes = (data[offset] & 0xff) |
-                            ((data[offset + 1] & 0xFFL) << 8) |
-                            ((data[offset + 2] & 0xFFL) << 16) |
-                            ((data[offset + 3] & 0xFFL) << 24) |
-                            ((data[offset + 4] & 0xFFL) << 32) |
-                            ((data[offset + 5] & 0xFFL) << 40) |
-                            ((data[offset + 6] & 0xFFL) << 48) |
-                            ((data[offset + 7] & 0xFFL) << 56);
-                    unsafe.putDouble(object, fo, Double.longBitsToDouble(doubleBytes));
+                    unsafe.putDouble(object, fo, unsafe.getDouble(dataAddress + offset));
                     offset += 8;
                     break;
                 }
             }
         }
-
     }
 
     private void decomposeObject(int pos, Object object) {
@@ -224,77 +199,49 @@ public class MemoryEfficientList implements List {
 
             switch(fieldTypes[i]) {
                 case TYPE_BOOLEAN: {
-                    data[offset] = (byte) (unsafe.getBoolean(object, fo) ? 1 : 0);
+                    unsafe.putByte(dataAddress + offset, (byte) (unsafe.getBoolean(object, fo) ? 1 : 0));
                     offset += 1;
                     break;
                 }
 
                 case TYPE_BYTE: {
-                    data[offset] = unsafe.getByte(object, fo);
+                    unsafe.putByte(dataAddress + offset, unsafe.getByte(object, fo));
                     offset += 1;
                     break;
                 }
 
                 case TYPE_SHORT: {
-                    short shortValue = unsafe.getShort(object, fo);
-                    data[offset] = (byte) (shortValue & 0xFF);
-                    data[offset + 1] = (byte) ((shortValue >> 8) & 0xFF);
+                    unsafe.putShort(dataAddress + offset, unsafe.getShort(object, fo));
                     offset += 2;
                     break;
                 }
 
                 case TYPE_CHAR: {
-                    char charValue = unsafe.getChar(object, fo);
-                    data[offset] = (byte) (charValue & 0xFF);
-                    data[offset + 1] = (byte) ((charValue >> 8) & 0xFF);
+                    unsafe.putChar(dataAddress + offset, unsafe.getChar(object, fo));
                     offset += 2;
                     break;
                 }
 
                 case TYPE_INT: {
-                    int intValue = unsafe.getInt(object, fo);
-                    data[offset] = (byte) (intValue & 0xFF);
-                    data[offset + 1] = (byte) ((intValue >> 8) & 0xFF);
-                    data[offset + 2] = (byte) ((intValue >> 16) & 0xFF);
-                    data[offset + 3] = (byte) ((intValue >> 24) & 0xFF);
+                    unsafe.putInt(dataAddress + offset, unsafe.getInt(object, fo));
                     offset += 4;
                     break;
                 }
 
                 case TYPE_FLOAT: {
-                    int floatValue = Float.floatToRawIntBits(unsafe.getFloat(object, fo));
-                    data[offset] = (byte) (floatValue & 0xFF);
-                    data[offset + 1] = (byte) ((floatValue >> 8) & 0xFF);
-                    data[offset + 2] = (byte) ((floatValue >> 16) & 0xFF);
-                    data[offset + 3] = (byte) ((floatValue >> 24) & 0xFF);
+                    unsafe.putFloat(dataAddress + offset, unsafe.getFloat(object, fo));
                     offset += 4;
                     break;
                 }
 
                 case TYPE_LONG: {
-                    long longValue = unsafe.getLong(object, fo);
-                    data[offset] = (byte) (longValue & 0xFF);
-                    data[offset + 1] = (byte) ((longValue >> 8) & 0xFF);
-                    data[offset + 2] = (byte) ((longValue >> 16) & 0xFF);
-                    data[offset + 3] = (byte) ((longValue >> 24) & 0xFF);
-                    data[offset + 4] = (byte) ((longValue >> 32) & 0xFF);
-                    data[offset + 5] = (byte) ((longValue >> 40) & 0xFF);
-                    data[offset + 6] = (byte) ((longValue >> 48) & 0xFF);
-                    data[offset + 7] = (byte) ((longValue >> 56) & 0xFF);
+                    unsafe.putLong(dataAddress + offset, unsafe.getLong(object, fo));
                     offset += 8;
                     break;
                 }
 
                 case TYPE_DOUBLE: {
-                    long doubleValue = Double.doubleToRawLongBits(unsafe.getDouble(object, fo));
-                    data[offset] = (byte) (doubleValue & 0xFF);
-                    data[offset + 1] = (byte) ((doubleValue >> 8) & 0xFF);
-                    data[offset + 2] = (byte) ((doubleValue >> 16) & 0xFF);
-                    data[offset + 3] = (byte) ((doubleValue >> 24) & 0xFF);
-                    data[offset + 4] = (byte) ((doubleValue >> 32) & 0xFF);
-                    data[offset + 5] = (byte) ((doubleValue >> 40) & 0xFF);
-                    data[offset + 6] = (byte) ((doubleValue >> 48) & 0xFF);
-                    data[offset + 7] = (byte) ((doubleValue >> 56) & 0xFF);
+                    unsafe.putDouble(dataAddress + offset, unsafe.getDouble(object, fo));
                     offset += 8;
                     break;
                 }
@@ -357,10 +304,12 @@ public class MemoryEfficientList implements List {
 
     @Override
     public boolean add(Object o) {
-        if((size + 1) * objectByteSize > data.length) {
-            byte[] newData = new byte[data.length * 3 / 2 + 1];
-            System.arraycopy(data, 0, newData, 0, size * objectByteSize);
-            data = newData;
+        if(size >= dataSize) {
+            dataSize = dataSize * 3 / 2 + 1;
+            long newAddress = unsafe.allocateMemory(dataSize * objectByteSize);
+            unsafe.copyMemory(dataAddress, newAddress, size * objectByteSize);
+            unsafe.freeMemory(dataAddress);
+            dataAddress = newAddress;
         }
 
         try {
@@ -479,8 +428,7 @@ public class MemoryEfficientList implements List {
         final int newSize = size - 1;
 
         if(newSize > index)
-            System.arraycopy(data, (index + 1) * objectByteSize,
-                    data, index * objectByteSize, (newSize - index) * objectByteSize);
+            unsafe.copyMemory((index + 1) * objectByteSize, index * objectByteSize, (newSize - index) * objectByteSize);
 
         size = newSize;
         return oldValue;
