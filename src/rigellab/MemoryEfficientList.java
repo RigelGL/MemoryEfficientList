@@ -100,7 +100,6 @@ public class MemoryEfficientList implements List {
         for(int i = 0; i < fieldTypes.length; i++) {
             Field f = correctFields.get(i);
             fieldOffsets[i] = unsafe.objectFieldOffset(f);
-            f.setAccessible(true);
             if(f.getType() == boolean.class) {
                 fieldTypes[i] = TYPE_BOOLEAN;
                 objectByteSize += 1;

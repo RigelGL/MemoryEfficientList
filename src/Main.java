@@ -1,10 +1,9 @@
-import com.sun.security.jgss.GSSUtil;
 import rigellab.MemoryEfficientList;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import java.util.Vector;
+
 
 public class Main {
 
@@ -74,14 +73,12 @@ public class Main {
             mel.clear();
             al.clear();
 
-            for(int i = 0; i < n; i++) {
-                int k = r.nextInt();
-                mel.add(k);
-                al.add(k);
-            }
-
             r.setSeed(1979804576454564L);
             long t = System.nanoTime();
+
+            for(int i = 0; i < n; i++)
+                mel.add(r.nextInt());
+
             for(int i = 0; i < n; i++) {
                 int pos1 = r.nextInt(n);
                 int pos2 = r.nextInt(n);
@@ -94,6 +91,10 @@ public class Main {
 
             r.setSeed(1979804576454564L);
             t = System.nanoTime();
+
+            for(int i = 0; i < n; i++)
+                al.add(r.nextInt());
+
             for(int i = 0; i < n; i++) {
                 int pos1 = r.nextInt(n);
                 int pos2 = r.nextInt(n);
@@ -146,20 +147,13 @@ public class Main {
             alIs.clear();
             alResult.clear();
 
-            for(int i = 0; i < n; i++) {
+            long t = System.nanoTime();
+            for(int i = 0; i < n; i++)
                 melIs.add(true);
-                alIs.add(true);
-            }
-
             melIs.set(0, false);
             melIs.set(1, false);
-
-            alIs.set(0, false);
-            alIs.set(1, false);
-
-            long t = System.nanoTime();
             for(int i = 0; i < n; i++) {
-                if(((Boolean)((MemoryEfficientList) melIs).getFast(i)) && i * i > 0) {
+                if(((Boolean) ((MemoryEfficientList) melIs).getFast(i)) && i * i > 0) {
                     for(int j = i * i; j < n; j += i)
                         melIs.set(j, false);
                     melResult.add(i);
@@ -168,6 +162,10 @@ public class Main {
             long deltaMel = System.nanoTime() - t;
 
             t = System.nanoTime();
+            for(int i = 0; i < n; i++)
+                alIs.add(true);
+            alIs.set(0, false);
+            alIs.set(1, false);
             for(int i = 0; i < n; i++) {
                 if(alIs.get(i) && i * i > 0) {
                     for(int j = i * i; j < n; j += i)
@@ -308,8 +306,8 @@ public class Main {
             for(int i = 0; i < n; i++) {
                 int pos1 = r.nextInt(n);
                 int pos2 = r.nextInt(n);
-                Vec3 a = (Vec3) ((MemoryEfficientList) mel).get(pos1);
-                Vec3 b = (Vec3) ((MemoryEfficientList) mel).get(pos2);
+                Vec3 a = (Vec3) ((MemoryEfficientList) mel).getFast(pos1);
+                Vec3 b = (Vec3) ((MemoryEfficientList) mel).getFast2(pos2);
                 mel.set(pos1, b);
                 mel.set(pos2, a);
             }
@@ -348,14 +346,78 @@ public class Main {
     }
 
 
+    private static void testPerformanceAddIntegers(int n) throws Exception {
+
+        long minMel = Long.MAX_VALUE;
+        long minAr = Long.MAX_VALUE;
+        long minInts = Long.MAX_VALUE;
+        long totalMel = 0;
+        long totalAr = 0;
+        long totalInts = 0;
+        int ignored = 5;
+        int count = 10;
+
+        Random r = new Random();
+
+        for(int h = 0; h < ignored + count; h++) {
+            List<Integer> mel = new MemoryEfficientList(Integer.class, n);
+            List<Integer> al = new ArrayList<>(n);
+            int[] ints = new int[n];
+
+            r.setSeed(1979804576454564L);
+            long t = System.nanoTime();
+            for(int i = 0; i < n; i++)
+                mel.add(r.nextInt());
+
+            long deltaMel = System.nanoTime() - t;
+
+            r.setSeed(1979804576454564L);
+            t = System.nanoTime();
+            for(int i = 0; i < n; i++)
+                al.add(r.nextInt());
+            long deltaAr = System.nanoTime() - t;
+
+            r.setSeed(1979804576454564L);
+            t = System.nanoTime();
+            for(int i = 0; i < n; i++)
+                ints[i] = r.nextInt();
+            long deltaInts = System.nanoTime() - t;
+
+            if(h >= ignored) {
+                minMel = Math.min(minMel, deltaMel);
+                minAr = Math.min(minAr, deltaAr);
+                minInts = Math.min(minInts, deltaInts);
+                totalMel += deltaMel;
+                totalAr += deltaAr;
+                totalInts += deltaInts;
+            }
+
+            if(mel.hashCode() != al.hashCode()) {
+                System.err.println("INVALID HASHES");
+            }
+        }
+
+        totalMel /= count;
+        totalAr /= count;
+        totalInts /= count;
+
+        System.out.println("addIntegers: n=" + n + "\n" +
+                "MEL: min=" + minMel * 1e-9f + ", avg=" + totalMel * 1e-9f + "\n" +
+                "AL: min=" + minAr * 1e-9f + ", avg=" + totalAr * 1e-9f + "\n" +
+                "INTS: min=" + minInts * 1e-9f + ", avg=" + totalInts * 1e-9f);
+    }
+
+
     public static void main(String[] args) throws Exception {
 //        Thread.sleep(5_000);
 //        testPerformanceIntegerToArray(10_000_000);
 //        testPerformanceIntegerRandomSwapping(10_000_000);
 //        testPerformancePrimes(10_000_000);
-//        testPerformanceLargeObjectRandomSwapping(1_000_000);
+//        testPerformanceLargeObjectRandomSwapping(10_000_000);
 
-        testPerformanceVec3RandomSwapping(10_000_000);
+//        testPerformanceVec3RandomSwapping(10_000_000);
+
+        testPerformanceAddIntegers(1_000_000);
 
     }
 }
